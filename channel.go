@@ -48,6 +48,7 @@ func receiveLoop(
 
 			if err != nil {
 				errors <- err
+				continue
 			}
 
 			for _, message := range output.Messages {
