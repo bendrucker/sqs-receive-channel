@@ -38,7 +38,10 @@ func TestReceive(t *testing.T) {
 		}, nil).
 		AnyTimes()
 
-	receive, _, _ := Create(ctx, sqsapi, input)
+	receive, _, _ := Create(ctx, Options{
+		SQS:                 sqsapi,
+		ReceiveMessageInput: input,
+	})
 
 	message := <-receive
 	assert.Equal(t, "hello world", aws.StringValue(message.Body))
@@ -47,6 +50,8 @@ func TestReceive(t *testing.T) {
 func TestDelete(t *testing.T) {
 	ctx, sqsapi, finish := setup(t)
 	defer finish()
+
+	ctx, cancel := context.WithCancel(ctx)
 
 	input := &sqs.ReceiveMessageInput{
 		QueueUrl: aws.String("http://foo.bar"),
@@ -71,11 +76,18 @@ func TestDelete(t *testing.T) {
 			QueueUrl:      aws.String("http://foo.bar"),
 			ReceiptHandle: aws.String("handle"),
 		}).
-		Return(&sqs.DeleteMessageOutput{}, nil)
+		Return(&sqs.DeleteMessageOutput{}, nil).
+		Do(func(_ context.Context, _ *sqs.DeleteMessageInput) {
+			cancel()
+		})
 
-	_, delete, _ := Create(ctx, sqsapi, input)
+	_, delete, _ := Create(ctx, Options{
+		SQS:                 sqsapi,
+		ReceiveMessageInput: input,
+	})
 
 	delete <- message
+	<-ctx.Done()
 }
 
 func TestReceiveError(t *testing.T) {
@@ -92,7 +104,10 @@ func TestReceiveError(t *testing.T) {
 		Return(nil, errors.New("SQS error")).
 		AnyTimes()
 
-	_, _, errs := Create(ctx, sqsapi, input)
+	_, _, errs := Create(ctx, Options{
+		SQS:                 sqsapi,
+		ReceiveMessageInput: input,
+	})
 
 	err := <-errs
 	assert.EqualError(t, err, "SQS error")
@@ -127,7 +142,10 @@ func TestDeleteError(t *testing.T) {
 		}).
 		Return(nil, errors.New("SQS error"))
 
-	_, deletes, errs := Create(ctx, sqsapi, input)
+	_, deletes, errs := Create(ctx, Options{
+		SQS:                 sqsapi,
+		ReceiveMessageInput: input,
+	})
 
 	deletes <- message
 	err := <-errs

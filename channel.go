@@ -2,27 +2,33 @@ package sqsch
 
 import (
 	"context"
+	"time"
 
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/aws/aws-sdk-go/service/sqs/sqsiface"
 )
 
+const LongPollDuraton = 20 * time.Second
+
+type Options struct {
+	SQS                 sqsiface.SQSAPI
+	ReceiveMessageInput *sqs.ReceiveMessageInput
+	DeleteInterval      time.Duration
+}
+
 // Create allocates the receive, delete, and errs channels and begins a polling loop for new messages
-func Create(
-	ctx context.Context,
-	sqsapi sqsiface.SQSAPI,
-	input *sqs.ReceiveMessageInput,
-) (
-	receive <-chan *sqs.Message,
-	delete chan<- *sqs.Message,
-	errs <-chan error,
-) {
+func Create(ctx context.Context, options Options) (receive <-chan *sqs.Message, delete chan<- *sqs.Message, errs <-chan error) {
+	if options.ReceiveMessageInput.WaitTimeSeconds == nil {
+		seconds := int64(LongPollDuraton.Seconds())
+		options.ReceiveMessageInput.WaitTimeSeconds = &seconds
+	}
+
 	receives := make(chan *sqs.Message)
 	deletes := make(chan *sqs.Message)
 	errors := make(chan error)
 
-	go receiveLoop(ctx, sqsapi, input, receives, errors)
-	go deleteLoop(ctx, sqsapi, *(input.QueueUrl), deletes, errors)
+	go receiveLoop(ctx, options.SQS, options.ReceiveMessageInput, receives, errors)
+	go deleteLoop(ctx, options.SQS, *(options.ReceiveMessageInput.QueueUrl), deletes, errors)
 	go func() {
 		<-ctx.Done()
 		close(errors)
