@@ -37,7 +37,7 @@ func TestReceive(t *testing.T) {
 			MaxNumberOfMessages: aws.Int64(1),
 		}).
 		Return(&sqs.ReceiveMessageOutput{
-			Messages: []*sqs.Message{&sqs.Message{
+			Messages: []*sqs.Message{{
 				Body: aws.String("hello world"),
 			}},
 		}, nil).
@@ -84,7 +84,7 @@ func TestDelete(t *testing.T) {
 		DeleteMessageBatchWithContext(ctx, &sqs.DeleteMessageBatchInput{
 			QueueUrl: aws.String("http://foo.bar"),
 			Entries: []*sqs.DeleteMessageBatchRequestEntry{
-				&sqs.DeleteMessageBatchRequestEntry{
+				{
 					Id:            aws.String("0"),
 					ReceiptHandle: aws.String("handle"),
 				},
@@ -93,7 +93,7 @@ func TestDelete(t *testing.T) {
 		Return(&sqs.DeleteMessageBatchOutput{
 			Failed: []*sqs.BatchResultErrorEntry{},
 			Successful: []*sqs.DeleteMessageBatchResultEntry{
-				&sqs.DeleteMessageBatchResultEntry{
+				{
 					Id: aws.String("0"),
 				},
 			},
@@ -168,7 +168,7 @@ func TestDeleteError(t *testing.T) {
 		DeleteMessageBatchWithContext(ctx, &sqs.DeleteMessageBatchInput{
 			QueueUrl: aws.String("http://foo.bar"),
 			Entries: []*sqs.DeleteMessageBatchRequestEntry{
-				&sqs.DeleteMessageBatchRequestEntry{
+				{
 					Id:            aws.String("0"),
 					ReceiptHandle: aws.String("handle"),
 				},
@@ -216,7 +216,7 @@ func TestDeleteFailureInBatch(t *testing.T) {
 		DeleteMessageBatchWithContext(ctx, &sqs.DeleteMessageBatchInput{
 			QueueUrl: aws.String("http://foo.bar"),
 			Entries: []*sqs.DeleteMessageBatchRequestEntry{
-				&sqs.DeleteMessageBatchRequestEntry{
+				{
 					Id:            aws.String("0"),
 					ReceiptHandle: aws.String("handle"),
 				},
@@ -224,7 +224,7 @@ func TestDeleteFailureInBatch(t *testing.T) {
 		}).
 		Return(&sqs.DeleteMessageBatchOutput{
 			Failed: []*sqs.BatchResultErrorEntry{
-				&sqs.BatchResultErrorEntry{
+				{
 					Id:      aws.String("0"),
 					Code:    aws.String("NOT_FOUND"),
 					Message: aws.String("message not found"),
