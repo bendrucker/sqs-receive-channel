@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 
@@ -17,7 +16,7 @@ import (
 func setup(t *testing.T) (context.Context, *mock.MockSQSAPI, func()) {
 	ctrl := gomock.NewController(t)
 	sqsapi := mock.NewMockSQSAPI(ctrl)
-	ctx, _ := context.WithTimeout(context.Background(), time.Duration(1)*time.Second)
+	ctx := context.TODO()
 	return ctx, sqsapi, ctrl.Finish
 }
 

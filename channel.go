@@ -41,7 +41,11 @@ type Options struct {
 }
 
 // Start allocates channels, begins receiving, and begins processing deletes
-func Start(ctx context.Context, options Options) (receive <-chan *sqs.Message, delete chan<- *sqs.Message, errs <-chan error) {
+func Start(ctx context.Context, options Options) (
+	receive <-chan *sqs.Message,
+	delete chan<- *sqs.Message,
+	errs <-chan error,
+) {
 	if options.ReceiveBufferSize == 0 {
 		options.ReceiveBufferSize = 1
 	}
@@ -146,7 +150,8 @@ func (d *Dispatch) Delete(ctx context.Context, deletes <-chan *sqs.Message, erro
 	}
 }
 
-// BatchDeletes buffers messages received on the delete channel, batching according to the DeleteInterval and the MaxBatchSize
+// BatchDeletes buffers messages received on the delete channel,
+// batching according to the DeleteInterval and the MaxBatchSize
 func (d *Dispatch) BatchDeletes(deletes <-chan *sqs.Message) <-chan []*sqs.DeleteMessageBatchRequestEntry {
 	input := make(chan interface{})
 	go func() {
