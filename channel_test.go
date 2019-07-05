@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 
@@ -16,7 +17,7 @@ import (
 func setup(t *testing.T) (context.Context, *mock.MockSQSAPI, func()) {
 	ctrl := gomock.NewController(t)
 	sqsapi := mock.NewMockSQSAPI(ctrl)
-	ctx := context.Background()
+	ctx, _ := context.WithTimeout(context.Background(), time.Duration(1)*time.Second)
 	return ctx, sqsapi, ctrl.Finish
 }
 
@@ -30,7 +31,11 @@ func TestReceive(t *testing.T) {
 
 	sqsapi.
 		EXPECT().
-		ReceiveMessageWithContext(ctx, input).
+		ReceiveMessageWithContext(ctx, &sqs.ReceiveMessageInput{
+			QueueUrl:            input.QueueUrl,
+			WaitTimeSeconds:     aws.Int64(20),
+			MaxNumberOfMessages: aws.Int64(1),
+		}).
 		Return(&sqs.ReceiveMessageOutput{
 			Messages: []*sqs.Message{&sqs.Message{
 				Body: aws.String("hello world"),
@@ -38,7 +43,7 @@ func TestReceive(t *testing.T) {
 		}, nil).
 		AnyTimes()
 
-	receive, _, _ := Create(ctx, Options{
+	receive, _, _ := Start(ctx, Options{
 		SQS:                 sqsapi,
 		ReceiveMessageInput: input,
 	})
@@ -64,7 +69,11 @@ func TestDelete(t *testing.T) {
 
 	sqsapi.
 		EXPECT().
-		ReceiveMessageWithContext(ctx, input).
+		ReceiveMessageWithContext(ctx, &sqs.ReceiveMessageInput{
+			QueueUrl:            input.QueueUrl,
+			WaitTimeSeconds:     aws.Int64(20),
+			MaxNumberOfMessages: aws.Int64(1),
+		}).
 		Return(&sqs.ReceiveMessageOutput{
 			Messages: []*sqs.Message{},
 		}, nil).
@@ -72,16 +81,28 @@ func TestDelete(t *testing.T) {
 
 	sqsapi.
 		EXPECT().
-		DeleteMessageWithContext(ctx, &sqs.DeleteMessageInput{
-			QueueUrl:      aws.String("http://foo.bar"),
-			ReceiptHandle: aws.String("handle"),
+		DeleteMessageBatchWithContext(ctx, &sqs.DeleteMessageBatchInput{
+			QueueUrl: aws.String("http://foo.bar"),
+			Entries: []*sqs.DeleteMessageBatchRequestEntry{
+				&sqs.DeleteMessageBatchRequestEntry{
+					Id:            aws.String("0"),
+					ReceiptHandle: aws.String("handle"),
+				},
+			},
 		}).
-		Return(&sqs.DeleteMessageOutput{}, nil).
-		Do(func(_ context.Context, _ *sqs.DeleteMessageInput) {
+		Return(&sqs.DeleteMessageBatchOutput{
+			Failed: []*sqs.BatchResultErrorEntry{},
+			Successful: []*sqs.DeleteMessageBatchResultEntry{
+				&sqs.DeleteMessageBatchResultEntry{
+					Id: aws.String("0"),
+				},
+			},
+		}, nil).
+		Do(func(_ interface{}, _ interface{}) {
 			cancel()
 		})
 
-	_, delete, _ := Create(ctx, Options{
+	_, delete, _ := Start(ctx, Options{
 		SQS:                 sqsapi,
 		ReceiveMessageInput: input,
 	})
@@ -100,11 +121,15 @@ func TestReceiveError(t *testing.T) {
 
 	sqsapi.
 		EXPECT().
-		ReceiveMessageWithContext(ctx, input).
+		ReceiveMessageWithContext(ctx, &sqs.ReceiveMessageInput{
+			QueueUrl:            input.QueueUrl,
+			WaitTimeSeconds:     aws.Int64(20),
+			MaxNumberOfMessages: aws.Int64(1),
+		}).
 		Return(nil, errors.New("SQS error")).
 		AnyTimes()
 
-	_, _, errs := Create(ctx, Options{
+	_, _, errs := Start(ctx, Options{
 		SQS:                 sqsapi,
 		ReceiveMessageInput: input,
 	})
@@ -128,7 +153,11 @@ func TestDeleteError(t *testing.T) {
 
 	sqsapi.
 		EXPECT().
-		ReceiveMessageWithContext(ctx, input).
+		ReceiveMessageWithContext(ctx, &sqs.ReceiveMessageInput{
+			QueueUrl:            input.QueueUrl,
+			WaitTimeSeconds:     aws.Int64(20),
+			MaxNumberOfMessages: aws.Int64(1),
+		}).
 		Return(&sqs.ReceiveMessageOutput{
 			Messages: []*sqs.Message{},
 		}, nil).
@@ -136,13 +165,18 @@ func TestDeleteError(t *testing.T) {
 
 	sqsapi.
 		EXPECT().
-		DeleteMessageWithContext(ctx, &sqs.DeleteMessageInput{
-			QueueUrl:      aws.String("http://foo.bar"),
-			ReceiptHandle: aws.String("handle"),
+		DeleteMessageBatchWithContext(ctx, &sqs.DeleteMessageBatchInput{
+			QueueUrl: aws.String("http://foo.bar"),
+			Entries: []*sqs.DeleteMessageBatchRequestEntry{
+				&sqs.DeleteMessageBatchRequestEntry{
+					Id:            aws.String("0"),
+					ReceiptHandle: aws.String("handle"),
+				},
+			},
 		}).
 		Return(nil, errors.New("SQS error"))
 
-	_, deletes, errs := Create(ctx, Options{
+	_, deletes, errs := Start(ctx, Options{
 		SQS:                 sqsapi,
 		ReceiveMessageInput: input,
 	})
