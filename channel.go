@@ -33,10 +33,11 @@ type Dispatch struct {
 
 // Options represents the user-configurable options for a Dispatch
 type Options struct {
+	ReceiveBufferSize int
+	DeleteInterval    time.Duration
+
 	SQS                 sqsiface.SQSAPI
-	ReceiveBufferSize   int
 	ReceiveMessageInput *sqs.ReceiveMessageInput
-	DeleteInterval      time.Duration
 }
 
 // Start allocates channels, begins receiving, and begins processing deletes
