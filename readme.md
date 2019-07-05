@@ -8,21 +8,6 @@ SQS charges per API request. This package implements [Action Batching](https://d
 * Uses [SQS long polling](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-long-polling.html) to reduce requests when no messages are available
 * Deletes messages in batches, flushing when `MaxBatchSize` (10) or `DeleteInterval` is reached.
 
-Given the following scenario:
-
-* Configuration: `ReceiveBufferSize=10, DeleteInterval=time.Duration(1)*time.Second`,
-* Queue is idle for 55 seconds
-* 10 messages become available
-* All messages are read from the receive channel immediately
-* All messages are handled and sent to the delete channel within 100ms
-
-The following API requests will be performed in the first 60s:
-
-* 4 calls to `ReceiveMessage` (2 that return empty, 1 that returns 10 messages, and then 1 that remains open at 1:00)
-* 1 call to `DeleteMessageBatch`, containing 10 message handles
-
-Compared to a naive approach (1 request per message, short polling), this can reduce requests to the SQS API by a considerable margin (1-3 orders of magnitude). Results will vary depending on throughput. For additional concurrency considerations, see [future work](#future-work).
-
 ## Usage
 
 ```go
@@ -54,6 +39,23 @@ func main() {
   }()
 }
 ```
+
+## Example
+
+The following example illustrates the API calls made by this package in a "bursty" application. This scenario envisions a queue that is mostly idle, but receives large numbers of messages on occasion.
+
+* Configuration: `ReceiveBufferSize=10, DeleteInterval=time.Duration(1)*time.Second`,
+* Queue is idle for 55 seconds
+* 10 messages become available
+* All messages are read from the receive channel immediately
+* All messages are handled and sent to the delete channel within 100ms
+
+The following API requests will be performed in the first 60s:
+
+* 4 calls to `ReceiveMessage` (2 that return empty, 1 that returns 10 messages, and then 1 that remains open at 1:00)
+* 1 call to `DeleteMessageBatch`, containing 10 message handles
+
+Compared to a naive approach (1 request per message, short polling), this can reduce requests to the SQS API by a considerable margin (1-3 orders of magnitude). Results will vary depending on throughput. For additional concurrency considerations, see [future work](#future-work).
 
 ## Future Work
 
