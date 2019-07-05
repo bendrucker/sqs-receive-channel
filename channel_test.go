@@ -185,3 +185,61 @@ func TestDeleteError(t *testing.T) {
 	err := <-errs
 	assert.EqualError(t, err, "SQS error")
 }
+
+func TestDeleteFailureInBatch(t *testing.T) {
+	ctx, sqsapi, finish := setup(t)
+	defer finish()
+
+	input := &sqs.ReceiveMessageInput{
+		QueueUrl: aws.String("http://foo.bar"),
+	}
+
+	message := &sqs.Message{
+		Body:          aws.String("hello world"),
+		ReceiptHandle: aws.String("handle"),
+	}
+
+	sqsapi.
+		EXPECT().
+		ReceiveMessageWithContext(ctx, &sqs.ReceiveMessageInput{
+			QueueUrl:            input.QueueUrl,
+			WaitTimeSeconds:     aws.Int64(20),
+			MaxNumberOfMessages: aws.Int64(1),
+		}).
+		Return(&sqs.ReceiveMessageOutput{
+			Messages: []*sqs.Message{},
+		}, nil).
+		AnyTimes()
+
+	sqsapi.
+		EXPECT().
+		DeleteMessageBatchWithContext(ctx, &sqs.DeleteMessageBatchInput{
+			QueueUrl: aws.String("http://foo.bar"),
+			Entries: []*sqs.DeleteMessageBatchRequestEntry{
+				&sqs.DeleteMessageBatchRequestEntry{
+					Id:            aws.String("0"),
+					ReceiptHandle: aws.String("handle"),
+				},
+			},
+		}).
+		Return(&sqs.DeleteMessageBatchOutput{
+			Failed: []*sqs.BatchResultErrorEntry{
+				&sqs.BatchResultErrorEntry{
+					Id:      aws.String("0"),
+					Code:    aws.String("NOT_FOUND"),
+					Message: aws.String("message not found"),
+				},
+			},
+			Successful: []*sqs.DeleteMessageBatchResultEntry{},
+		}, nil)
+
+	_, deletes, errs := Start(ctx, Options{
+		SQS:                 sqsapi,
+		ReceiveMessageInput: input,
+	})
+
+	deletes <- message
+	err := <-errs
+	assert.EqualError(t, err, "SQS batch delete error: message not found (NOT_FOUND)")
+	assert.EqualValues(t, "handle", err.(*BatchDeleteError).ReceiptHandle)
+}

@@ -110,7 +110,7 @@ type BatchDeleteError struct {
 }
 
 func (err *BatchDeleteError) Error() string {
-	return fmt.Sprintf("SQS delete error: %s (%s)", err.Message, err.Code)
+	return fmt.Sprintf("SQS batch delete error: %s (%s)", err.Message, err.Code)
 }
 
 // Delete processes messages received on the delete channel until the supplied context is canceled.
