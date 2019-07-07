@@ -83,17 +83,7 @@ func (d *Dispatch) Receive(ctx context.Context, receives chan<- *sqs.Message, er
 				continue
 			}
 
-			input := &sqs.ReceiveMessageInput{
-				MaxNumberOfMessages: aws.Int64(int64(capacity)),
-				WaitTimeSeconds:     aws.Int64(int64(MaxLongPollDuration.Seconds())),
-
-				AttributeNames:        d.ReceiveMessageInput.AttributeNames,
-				MessageAttributeNames: d.ReceiveMessageInput.MessageAttributeNames,
-				QueueUrl:              d.ReceiveMessageInput.QueueUrl,
-				VisibilityTimeout:     d.ReceiveMessageInput.VisibilityTimeout,
-			}
-
-			output, err := d.SQS.ReceiveMessageWithContext(ctx, input)
+			output, err := d.receiveMessages(ctx, capacity)
 
 			if err != nil {
 				errors <- err
@@ -105,6 +95,18 @@ func (d *Dispatch) Receive(ctx context.Context, receives chan<- *sqs.Message, er
 			}
 		}
 	}
+}
+
+func (d *Dispatch) receiveMessages(ctx context.Context, count int) (*sqs.ReceiveMessageOutput, error) {
+	return d.SQS.ReceiveMessageWithContext(ctx, &sqs.ReceiveMessageInput{
+		MaxNumberOfMessages: aws.Int64(int64(count)),
+		WaitTimeSeconds:     aws.Int64(int64(MaxLongPollDuration.Seconds())),
+
+		AttributeNames:        d.ReceiveMessageInput.AttributeNames,
+		MessageAttributeNames: d.ReceiveMessageInput.MessageAttributeNames,
+		QueueUrl:              d.ReceiveMessageInput.QueueUrl,
+		VisibilityTimeout:     d.ReceiveMessageInput.VisibilityTimeout,
+	})
 }
 
 // BatchDeleteError represents an error returned from SQS in response to a DeleteMessageBatch request
