@@ -110,6 +110,25 @@ func (d *Dispatch) QueueURL() *string {
 // This is used to determine how many ReceiveMessage requests to issue and how
 // many messages (count) are requested in each.
 func (d *Dispatch) ReceiveCapacity() int {
+	// TODO: This should be user specifiable and based on a different channel buffer
+	// An implementer will have workers:
+	// func worker(workers chan<- Worker, work <-chan Work) {
+	// 		workers <- Worker{work}
+	// 		doWork(<-work)
+	// }
+	//
+	// workers should be a buffered channel with cap set to the desired concurrency
+	// CountFunc should return len(workers)—the number of workers that have
+	// have not been assigned by the dispatcher by reading them from the channel
+	// and writing to their work channel
+	//
+	// Using the size of the receive buffer, the application will fetch eagerly.
+	// This is ok for lower throughput applications and inexpensive tasks where
+	// the visibility timeout is ~10x the expected time to processing.
+	//
+	// But given a 30s CPU-intensive job w/ a 60s timeout, the application would
+	// start buffering messages for ~30s before even starting work on them, resulting
+	// in lots of timeouts.
 	return cap(d.receives) - len(d.receives)
 }
 
