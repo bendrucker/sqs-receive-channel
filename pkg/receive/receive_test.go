@@ -75,7 +75,13 @@ func TestReceiveDone(t *testing.T) {
 	r.Start(ctx)
 	cancel()
 	<-r.done
-	assert.False(t, r.started)
+
+	_, ok := <-r.Results()
+	assert.False(t, ok)
+
+	_, ok = <-r.Errors()
+	assert.False(t, ok)
+
 }
 
 func TestReceivePanicInvalid(t *testing.T) {

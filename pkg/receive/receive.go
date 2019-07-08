@@ -15,7 +15,7 @@ type Receive struct {
 
 	results chan interface{}
 	errors  chan error
-	done    chan bool
+	done    chan struct{}
 
 	started bool
 }
@@ -46,7 +46,7 @@ func New(o Options) *Receive {
 		Options: o,
 		results: make(chan interface{}),
 		errors:  make(chan error),
-		done:    make(chan bool, 1),
+		done:    make(chan struct{}, 1),
 	}
 }
 
@@ -62,8 +62,9 @@ func (r *Receive) Start(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
-				r.started = false
-				r.done <- true
+				close(r.results)
+				close(r.errors)
+				close(r.done)
 				return
 			default:
 				r.Run()
