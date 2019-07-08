@@ -31,7 +31,7 @@ type Options struct {
 type CountFunc func() int
 
 // DoFunc takes a receive request and should return a result and error
-type DoFunc func(Request) (interface{}, error)
+type DoFunc func(Request) ([]interface{}, error)
 
 // Request specifies the number of results to try to receive
 type Request int
@@ -92,10 +92,12 @@ func (r *Receive) Run() {
 // Do executes a request, calling DoFunc and writing its result/error to the
 // corresponding channels
 func (r *Receive) Do(request Request) {
-	if result, err := r.DoFunc(request); err != nil {
+	if results, err := r.DoFunc(request); err != nil {
 		r.errors <- err
 	} else {
-		r.results <- result
+		for _, result := range results {
+			r.results <- result
+		}
 	}
 }
 

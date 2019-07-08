@@ -12,9 +12,9 @@ func TestReceive(t *testing.T) {
 	ctx := context.TODO()
 	r := New(Options{
 		MaxCount: 1,
-		DoFunc: func(count Request) (interface{}, error) {
+		DoFunc: func(count Request) ([]interface{}, error) {
 			assert.Equal(t, 1, int(count))
-			return "hello world", nil
+			return []interface{}{"hello world"}, nil
 		},
 		CountFunc: func() int {
 			return 1
@@ -31,7 +31,7 @@ func TestReceiveErrors(t *testing.T) {
 	ctx := context.TODO()
 	r := New(Options{
 		MaxCount: 1,
-		DoFunc: func(count Request) (interface{}, error) {
+		DoFunc: func(count Request) ([]interface{}, error) {
 			assert.Equal(t, 1, int(count))
 			return nil, errors.New("oops")
 		},
