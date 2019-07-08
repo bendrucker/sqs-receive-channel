@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 
@@ -104,6 +105,7 @@ func TestDelete(t *testing.T) {
 	_, delete, _ := Start(ctx, Options{
 		SQS:     sqsapi,
 		Receive: ReceiveOptions{RecieveMessageInput: input},
+		Delete:  DeleteOptions{Interval: time.Duration(100)},
 	})
 
 	delete <- message
@@ -178,6 +180,7 @@ func TestDeleteError(t *testing.T) {
 	_, deletes, errs := Start(ctx, Options{
 		SQS:     sqsapi,
 		Receive: ReceiveOptions{RecieveMessageInput: input},
+		Delete:  DeleteOptions{Interval: time.Duration(100)},
 	})
 
 	deletes <- message
@@ -235,6 +238,7 @@ func TestDeleteFailureInBatch(t *testing.T) {
 	_, deletes, errs := Start(ctx, Options{
 		SQS:     sqsapi,
 		Receive: ReceiveOptions{RecieveMessageInput: input},
+		Delete:  DeleteOptions{Interval: time.Duration(100)},
 	})
 
 	deletes <- message
