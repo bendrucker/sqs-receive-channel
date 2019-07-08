@@ -3,9 +3,10 @@ package sqsch
 import (
 	"context"
 	"fmt"
-	"math"
 	"strconv"
 	"time"
+
+	"github.com/bendrucker/sqs-receive-channel/pkg/receive"
 
 	"github.com/aws/aws-sdk-go/aws"
 
@@ -30,6 +31,10 @@ const (
 // Dispatch provides methods for processing messages SQS via channels
 type Dispatch struct {
 	Options
+
+	receives chan *sqs.Message
+	deletes  chan *sqs.Message
+	errors   chan error
 }
 
 // Options represents the user-configurable options for a Dispatch
@@ -43,26 +48,29 @@ type Options struct {
 
 // Start allocates channels, begins receiving, and begins processing deletes
 func Start(ctx context.Context, options Options) (
-	receive <-chan *sqs.Message,
-	delete chan<- *sqs.Message,
-	errs <-chan error,
+	<-chan *sqs.Message,
+	chan<- *sqs.Message,
+	<-chan error,
 ) {
 	if options.ReceiveBufferSize == 0 {
 		options.ReceiveBufferSize = 1
 	}
 
 	dispatch := Dispatch{
-		Options: options,
+		Options:  options,
+		receives: make(chan *sqs.Message, options.ReceiveBufferSize),
+		deletes:  make(chan *sqs.Message, MaxBatchSize),
+		errors:   make(chan error),
 	}
 
-	receives := make(chan *sqs.Message, options.ReceiveBufferSize)
-	deletes := make(chan *sqs.Message, MaxBatchSize)
-	errors := make(chan error)
+	dispatch.Receive(ctx)
+	go dispatch.Delete(ctx, dispatch.deletes, dispatch.errors)
 
-	go dispatch.Receive(ctx, receives, errors)
-	go dispatch.Delete(ctx, deletes, errors)
+	return dispatch.receives, dispatch.deletes, dispatch.errors
+}
 
-	return receives, deletes, errors
+func (d *Dispatch) ReceiveCapacity() int {
+	return cap(d.receives) - len(d.receives)
 }
 
 // Receive runs a loop that receives messages from SQS until the supplied context is canceled.
@@ -72,62 +80,52 @@ func Start(ctx context.Context, options Options) (
 // Because SQS bills per API request, ReceiveMessageInput.WaitTimeSeconds allows the loop to block
 // for up to 20 seconds if no messages are available to receive which results in ~3 requests per minute
 // instead of hundreds when your queue is idle.
-func (d *Dispatch) Receive(ctx context.Context, receives chan<- *sqs.Message, errors chan<- error) {
-	requests := make(chan ReceiveRequest)
+func (d *Dispatch) Receive(ctx context.Context) {
+	receive := receive.New(receive.Options{
+		MaxCount:  MaxBatchSize,
+		CountFunc: d.ReceiveCapacity,
+		DoFunc: func(count receive.Request) ([]interface{}, error) {
+			return d.doReceive(ctx, count)
+		},
+	})
 
-	for i := 0; i < d.numGoroutine(); i++ {
-		d.createReceiver(ctx, requests, receives, errors)
-	}
+	receive.Start(ctx)
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			capacity := cap(receives) - len(receives)
-
-			if capacity == 0 {
-				continue
-			}
-
-			output, err := d.receiveMessages(ctx, capacity)
-
-			if err != nil {
-				errors <- err
-				continue
-			}
-
-			for _, message := range output.Messages {
-				receives <- message
-			}
-		}
-	}
-}
-
-func (d *Dispatch) createReceiver(ctx context.Context, requests <-chan ReceiveRequest, receives chan<- *sqs.Message, errors chan<- error) {
 	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case request := <-requests:
-				output, err := d.receiveMessages(ctx, request.Count)
+		for message := range receive.Results() {
+			d.receives <- message.(*sqs.Message)
+		}
+	}()
 
-				if err != nil {
-					errors <- err
-					continue
-				}
-
-				for _, message := range output.Messages {
-					receives <- message
-				}
-			}
+	go func() {
+		for err := range receive.Errors() {
+			d.errors <- err
 		}
 	}()
 }
 
-func (d *Dispatch) receiveMessages(ctx context.Context, count int) (*sqs.ReceiveMessageOutput, error) {
-	return d.SQS.ReceiveMessageWithContext(ctx, &sqs.ReceiveMessageInput{
+func (d *Dispatch) doReceive(ctx context.Context, count receive.Request) ([]interface{}, error) {
+	messages, err := d.receiveMessages(ctx, int(count))
+
+	if err != nil {
+		return nil, err
+	}
+
+	return wrapMessages(messages), nil
+}
+
+func wrapMessages(messages []*sqs.Message) []interface{} {
+	results := make([]interface{}, len(messages))
+
+	for i, message := range messages {
+		results[i] = message
+	}
+
+	return results
+}
+
+func (d *Dispatch) receiveMessages(ctx context.Context, count int) ([]*sqs.Message, error) {
+	output, err := d.SQS.ReceiveMessageWithContext(ctx, &sqs.ReceiveMessageInput{
 		MaxNumberOfMessages: aws.Int64(int64(count)),
 		WaitTimeSeconds:     aws.Int64(int64(MaxLongPollDuration.Seconds())),
 
@@ -136,10 +134,12 @@ func (d *Dispatch) receiveMessages(ctx context.Context, count int) (*sqs.Receive
 		QueueUrl:              d.ReceiveMessageInput.QueueUrl,
 		VisibilityTimeout:     d.ReceiveMessageInput.VisibilityTimeout,
 	})
-}
 
-func (d *Dispatch) numGoroutine() int {
-	return int(math.Ceil(float64(d.ReceiveBufferSize) / MaxBatchSize))
+	if err != nil {
+		return nil, err
+	}
+
+	return output.Messages, nil
 }
 
 // BatchDeleteError represents an error returned from SQS in response to a DeleteMessageBatch request
