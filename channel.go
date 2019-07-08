@@ -30,7 +30,7 @@ const (
 
 // Dispatch provides methods for processing messages SQS via channels
 type Dispatch struct {
-	Options
+	Options Options
 
 	receives chan *sqs.Message
 	deletes  chan *sqs.Message
@@ -75,6 +75,10 @@ func (do *DeleteOptions) Defaults() {
 	if do.Interval == 0 {
 		do.Interval = time.Duration(1) * time.Second
 	}
+
+	if do.Concurrency == 0 {
+		do.Concurrency = 1
+	}
 }
 
 // Start allocates channels, begins receiving, and begins processing deletes
@@ -92,7 +96,7 @@ func Start(ctx context.Context, options Options) (
 	}
 
 	dispatch.Receive(ctx)
-	go dispatch.Delete(ctx, dispatch.deletes, dispatch.errors)
+	dispatch.Delete(ctx)
 
 	return dispatch.receives, dispatch.deletes, dispatch.errors
 }
@@ -162,7 +166,7 @@ func wrapMessages(messages []*sqs.Message) []interface{} {
 
 func (d *Dispatch) receiveMessages(ctx context.Context, count int) ([]*sqs.Message, error) {
 	input := d.Options.Receive.RecieveMessageInput
-	output, err := d.SQS.ReceiveMessageWithContext(ctx, &sqs.ReceiveMessageInput{
+	output, err := d.Options.SQS.ReceiveMessageWithContext(ctx, &sqs.ReceiveMessageInput{
 		MaxNumberOfMessages: aws.Int64(int64(count)),
 		WaitTimeSeconds:     aws.Int64(int64(MaxLongPollDuration.Seconds())),
 		QueueUrl:            d.QueueURL(),
@@ -193,37 +197,41 @@ func (err *BatchDeleteError) Error() string {
 // Delete processes messages received on the delete channel until the supplied context is canceled.
 // It batching messages with BatchDeletes and calls the SQS DeleteMessageBatch API to trigger deletion.
 // If there are failures in the DeleteMessageBatchOutput, it sends one error per failure to the errors channel.
-func (d *Dispatch) Delete(ctx context.Context, deletes <-chan *sqs.Message, errors chan<- error) {
-	batches := d.BatchDeletes(deletes)
+func (d *Dispatch) Delete(ctx context.Context) {
+	batches := d.BatchDeletes(d.deletes)
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case entries := <-batches:
-			output, err := d.SQS.DeleteMessageBatchWithContext(ctx, &sqs.DeleteMessageBatchInput{
-				Entries:  entries,
-				QueueUrl: d.QueueURL(),
-			})
+	for i := 0; i < d.Options.Delete.Concurrency; i++ {
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case entries := <-batches:
+					output, err := d.Options.SQS.DeleteMessageBatchWithContext(ctx, &sqs.DeleteMessageBatchInput{
+						Entries:  entries,
+						QueueUrl: d.QueueURL(),
+					})
 
-			if err != nil {
-				errors <- err
-				continue
-			}
+					if err != nil {
+						d.errors <- err
+						continue
+					}
 
-			for i, failure := range output.Failed {
-				errors <- &BatchDeleteError{
-					Code:          *failure.Code,
-					Message:       *failure.Message,
-					ReceiptHandle: *entries[i].ReceiptHandle,
+					for i, failure := range output.Failed {
+						d.errors <- &BatchDeleteError{
+							Code:          *failure.Code,
+							Message:       *failure.Message,
+							ReceiptHandle: *entries[i].ReceiptHandle,
+						}
+					}
 				}
 			}
-		}
+		}()
 	}
 }
 
 // BatchDeletes buffers messages received on the delete channel,
-// batching according to the DeleteInterval and the MaxBatchSize
+// batching according to the Delete.Interval and the MaxBatchSize
 func (d *Dispatch) BatchDeletes(deletes <-chan *sqs.Message) <-chan []*sqs.DeleteMessageBatchRequestEntry {
 	input := make(chan interface{})
 	go func() {
