@@ -43,8 +43,8 @@ func TestReceive(t *testing.T) {
 		AnyTimes()
 
 	receive, _, _ := Start(ctx, Options{
-		SQS:                 sqsapi,
-		ReceiveMessageInput: input,
+		SQS:     sqsapi,
+		Receive: ReceiveOptions{RecieveMessageInput: input},
 	})
 
 	message := <-receive
@@ -102,8 +102,8 @@ func TestDelete(t *testing.T) {
 		})
 
 	_, delete, _ := Start(ctx, Options{
-		SQS:                 sqsapi,
-		ReceiveMessageInput: input,
+		SQS:     sqsapi,
+		Receive: ReceiveOptions{RecieveMessageInput: input},
 	})
 
 	delete <- message
@@ -129,8 +129,8 @@ func TestReceiveError(t *testing.T) {
 		AnyTimes()
 
 	_, _, errs := Start(ctx, Options{
-		SQS:                 sqsapi,
-		ReceiveMessageInput: input,
+		SQS:     sqsapi,
+		Receive: ReceiveOptions{RecieveMessageInput: input},
 	})
 
 	err := <-errs
@@ -176,8 +176,8 @@ func TestDeleteError(t *testing.T) {
 		Return(nil, errors.New("SQS error"))
 
 	_, deletes, errs := Start(ctx, Options{
-		SQS:                 sqsapi,
-		ReceiveMessageInput: input,
+		SQS:     sqsapi,
+		Receive: ReceiveOptions{RecieveMessageInput: input},
 	})
 
 	deletes <- message
@@ -233,8 +233,8 @@ func TestDeleteFailureInBatch(t *testing.T) {
 		}, nil)
 
 	_, deletes, errs := Start(ctx, Options{
-		SQS:                 sqsapi,
-		ReceiveMessageInput: input,
+		SQS:     sqsapi,
+		Receive: ReceiveOptions{RecieveMessageInput: input},
 	})
 
 	deletes <- message

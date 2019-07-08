@@ -39,11 +39,42 @@ type Dispatch struct {
 
 // Options represents the user-configurable options for a Dispatch
 type Options struct {
-	ReceiveBufferSize int
-	DeleteInterval    time.Duration
+	Receive ReceiveOptions
+	Delete  DeleteOptions
 
-	SQS                 sqsiface.SQSAPI
-	ReceiveMessageInput *sqs.ReceiveMessageInput
+	SQS sqsiface.SQSAPI
+}
+
+// Defaults sets default values
+func (o *Options) Defaults() {
+	o.Receive.Defaults()
+	o.Delete.Defaults()
+}
+
+// ReceiveOptions configures receiving of messages from SQS
+type ReceiveOptions struct {
+	BufferSize          int
+	RecieveMessageInput *sqs.ReceiveMessageInput
+}
+
+// Defaults sets default values
+func (ro *ReceiveOptions) Defaults() {
+	if ro.BufferSize == 0 {
+		ro.BufferSize = 1
+	}
+}
+
+// DeleteOptions configures deletion of messages from SQS
+type DeleteOptions struct {
+	Interval    time.Duration
+	Concurrency int
+}
+
+// Defaults sets default values
+func (do *DeleteOptions) Defaults() {
+	if do.Interval == 0 {
+		do.Interval = time.Duration(1) * time.Second
+	}
 }
 
 // Start allocates channels, begins receiving, and begins processing deletes
@@ -52,13 +83,10 @@ func Start(ctx context.Context, options Options) (
 	chan<- *sqs.Message,
 	<-chan error,
 ) {
-	if options.ReceiveBufferSize == 0 {
-		options.ReceiveBufferSize = 1
-	}
-
+	options.Defaults()
 	dispatch := Dispatch{
 		Options:  options,
-		receives: make(chan *sqs.Message, options.ReceiveBufferSize),
+		receives: make(chan *sqs.Message, options.Receive.BufferSize),
 		deletes:  make(chan *sqs.Message, MaxBatchSize),
 		errors:   make(chan error),
 	}
@@ -69,6 +97,14 @@ func Start(ctx context.Context, options Options) (
 	return dispatch.receives, dispatch.deletes, dispatch.errors
 }
 
+// QueueURL returns the SQS Queue URL specified with Options.Receive.ReceiveMessageInput
+func (d *Dispatch) QueueURL() *string {
+	return d.Options.Receive.RecieveMessageInput.QueueUrl
+}
+
+// ReceiveCapacity returns the available space in the receive channel's buffer.
+// This is used to determine how many ReceiveMessage requests to issue and how
+// many messages (count) are requested in each.
 func (d *Dispatch) ReceiveCapacity() int {
 	return cap(d.receives) - len(d.receives)
 }
@@ -125,14 +161,15 @@ func wrapMessages(messages []*sqs.Message) []interface{} {
 }
 
 func (d *Dispatch) receiveMessages(ctx context.Context, count int) ([]*sqs.Message, error) {
+	input := d.Options.Receive.RecieveMessageInput
 	output, err := d.SQS.ReceiveMessageWithContext(ctx, &sqs.ReceiveMessageInput{
 		MaxNumberOfMessages: aws.Int64(int64(count)),
 		WaitTimeSeconds:     aws.Int64(int64(MaxLongPollDuration.Seconds())),
+		QueueUrl:            d.QueueURL(),
 
-		AttributeNames:        d.ReceiveMessageInput.AttributeNames,
-		MessageAttributeNames: d.ReceiveMessageInput.MessageAttributeNames,
-		QueueUrl:              d.ReceiveMessageInput.QueueUrl,
-		VisibilityTimeout:     d.ReceiveMessageInput.VisibilityTimeout,
+		AttributeNames:        input.AttributeNames,
+		MessageAttributeNames: input.MessageAttributeNames,
+		VisibilityTimeout:     input.VisibilityTimeout,
 	})
 
 	if err != nil {
@@ -166,7 +203,7 @@ func (d *Dispatch) Delete(ctx context.Context, deletes <-chan *sqs.Message, erro
 		case entries := <-batches:
 			output, err := d.SQS.DeleteMessageBatchWithContext(ctx, &sqs.DeleteMessageBatchInput{
 				Entries:  entries,
-				QueueUrl: d.ReceiveMessageInput.QueueUrl,
+				QueueUrl: d.QueueURL(),
 			})
 
 			if err != nil {
@@ -195,7 +232,7 @@ func (d *Dispatch) BatchDeletes(deletes <-chan *sqs.Message) <-chan []*sqs.Delet
 		}
 	}()
 
-	batches := bach.NewBatch(input, MaxBatchSize, d.DeleteInterval)
+	batches := bach.NewBatch(input, MaxBatchSize, d.Options.Delete.Interval)
 	output := make(chan []*sqs.DeleteMessageBatchRequestEntry)
 
 	go func() {
