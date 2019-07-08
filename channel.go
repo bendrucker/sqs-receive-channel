@@ -3,6 +3,7 @@ package sqsch
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -72,6 +73,12 @@ func Start(ctx context.Context, options Options) (
 // for up to 20 seconds if no messages are available to receive which results in ~3 requests per minute
 // instead of hundreds when your queue is idle.
 func (d *Dispatch) Receive(ctx context.Context, receives chan<- *sqs.Message, errors chan<- error) {
+	requests := make(chan ReceiveRequest)
+
+	for i := 0; i < d.numGoroutine(); i++ {
+		d.createReceiver(ctx, requests, receives, errors)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -97,6 +104,28 @@ func (d *Dispatch) Receive(ctx context.Context, receives chan<- *sqs.Message, er
 	}
 }
 
+func (d *Dispatch) createReceiver(ctx context.Context, requests <-chan ReceiveRequest, receives chan<- *sqs.Message, errors chan<- error) {
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case request := <-requests:
+				output, err := d.receiveMessages(ctx, request.Count)
+
+				if err != nil {
+					errors <- err
+					continue
+				}
+
+				for _, message := range output.Messages {
+					receives <- message
+				}
+			}
+		}
+	}()
+}
+
 func (d *Dispatch) receiveMessages(ctx context.Context, count int) (*sqs.ReceiveMessageOutput, error) {
 	return d.SQS.ReceiveMessageWithContext(ctx, &sqs.ReceiveMessageInput{
 		MaxNumberOfMessages: aws.Int64(int64(count)),
@@ -107,6 +136,10 @@ func (d *Dispatch) receiveMessages(ctx context.Context, count int) (*sqs.Receive
 		QueueUrl:              d.ReceiveMessageInput.QueueUrl,
 		VisibilityTimeout:     d.ReceiveMessageInput.VisibilityTimeout,
 	})
+}
+
+func (d *Dispatch) numGoroutine() int {
+	return int(math.Ceil(float64(d.ReceiveBufferSize) / MaxBatchSize))
 }
 
 // BatchDeleteError represents an error returned from SQS in response to a DeleteMessageBatch request
