@@ -2,6 +2,8 @@ github.com/aws/aws-sdk-go v1.20.15 h1:y9ts8MJhB7ReUidS6Rq+0KxdFeL01J+pmOlGq6Yqpi
 github.com/aws/aws-sdk-go v1.20.15/go.mod h1:KmX6BPdI08NWTb3/sm4ZGu5ShLoqVDhKgpiN924inxo=
 github.com/bendrucker/bach v0.0.0-20190705014630-3842edc7131b h1:fvhLaTWgtnogVNNyQtWmq1b3e9s8rRxcHvlZFgkdCzI=
 github.com/bendrucker/bach v0.0.0-20190705014630-3842edc7131b/go.mod h1:x5DH700TlqsJmL+OUUtQbyGV80GaZdW7DMGf7tq6BlU=
+github.com/bendrucker/werk v0.0.0-20190708174648-d90d18d6bd29 h1:echbS3gq1mNWKv0wYwVNl+ps/f421ghV3Xhp78IazOI=
+github.com/bendrucker/werk v0.0.0-20190708174648-d90d18d6bd29/go.mod h1:yODJXONERfUuiefb6f9XLUyB2jZmFne3GkmzC8GPadw=
 github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/golang/mock v1.3.1 h1:qGJ6qTW+x6xX/my+8YUVl4WNpX9B7+/l2tRsHGZ7f2s=
